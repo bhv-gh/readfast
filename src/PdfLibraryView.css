@@ -3,6 +3,8 @@
   max-width: 1200px;
   margin: 0 auto;
   padding: 20px;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .library-header {
@@ -52,8 +54,9 @@
 
 .search-input {
   flex: 1;
-  min-width: 200px;
+  min-width: 0;
   padding: 12px 16px;
+  box-sizing: border-box;
   border: 1px solid #3a3a3a;
   border-radius: 8px;
   background: #2a2a2a;
