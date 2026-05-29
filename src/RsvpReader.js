@@ -1,104 +1,96 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './RsvpReader.css';
 
-function RsvpReader({ text, onClose }) {
+const POSITION_KEY = 'readfast_positions';
+
+function getPositions() {
+  try {
+    return JSON.parse(localStorage.getItem(POSITION_KEY)) || {};
+  } catch { return {}; }
+}
+
+function savePosition(pdfId, index) {
+  if (!pdfId) return;
+  const positions = getPositions();
+  positions[pdfId] = index;
+  localStorage.setItem(POSITION_KEY, JSON.stringify(positions));
+}
+
+function getSavedPosition(pdfId) {
+  if (!pdfId) return 0;
+  return getPositions()[pdfId] || 0;
+}
+
+function RsvpReader({ text, pdfId, onClose }) {
   const [words, setWords] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [wpm, setWpm] = useState(300); // Words per minute
-  const [touchStartY, setTouchStartY] = useState(null);
-  const [touchStartX, setTouchStartX] = useState(null);
+  const [wpm, setWpm] = useState(300);
   const [speedChangeIndicator, setSpeedChangeIndicator] = useState(null);
-  const [isMobileLandscape, setIsMobileLandscape] = useState(false);
-  const [lastTapTime, setLastTapTime] = useState(0);
+  const [isMobile, setIsMobile] = useState(false);
   const containerRef = useRef(null);
   const intervalRef = useRef(null);
+  const holdIntervalRef = useRef(null);
+  const touchStartRef = useRef(null);
+  const isHoldingRef = useRef(false);
+  const holdTimerRef = useRef(null);
 
-  // Detect mobile landscape mode
   useEffect(() => {
-    const checkMobileLandscape = () => {
-      const isMobile = window.innerWidth <= 768 || 'ontouchstart' in window;
-      const isLandscape = window.innerWidth > window.innerHeight;
-      setIsMobileLandscape(isMobile && isLandscape);
+    const checkMobile = () => {
+      setIsMobile('ontouchstart' in window || window.innerWidth <= 768);
     };
-
-    checkMobileLandscape();
-    window.addEventListener('resize', checkMobileLandscape);
-    window.addEventListener('orientationchange', checkMobileLandscape);
-    
-    return () => {
-      window.removeEventListener('resize', checkMobileLandscape);
-      window.removeEventListener('orientationchange', checkMobileLandscape);
-    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Split text into words
   useEffect(() => {
     if (text) {
       const wordArray = text.split(/\s+/).filter(word => word.length > 0);
       setWords(wordArray);
-      setCurrentIndex(0);
+      const saved = getSavedPosition(pdfId);
+      setCurrentIndex(Math.min(saved, wordArray.length - 1));
       setIsPlaying(false);
     }
-  }, [text]);
+  }, [text, pdfId]);
 
-  // Calculate interval in milliseconds from WPM
-  const getInterval = useCallback(() => {
-    return (60 / wpm) * 1000;
-  }, [wpm]);
+  // Persist position on changes
+  useEffect(() => {
+    savePosition(pdfId, currentIndex);
+  }, [pdfId, currentIndex]);
 
-  // Advance to next word
+  const getInterval = useCallback(() => (60 / wpm) * 1000, [wpm]);
+
   const nextWord = useCallback(() => {
     setCurrentIndex(prev => {
-      if (prev < words.length - 1) {
-        return prev + 1;
-      } else {
-        setIsPlaying(false);
-        return prev;
-      }
+      if (prev < words.length - 1) return prev + 1;
+      setIsPlaying(false);
+      return prev;
     });
   }, [words.length]);
 
-  // Go to previous word
   const prevWord = useCallback(() => {
     setCurrentIndex(prev => Math.max(0, prev - 1));
-  }, []);
-
-  // Handle play/pause
-  const togglePlayPause = useCallback(() => {
-    setIsPlaying(prev => !prev);
   }, []);
 
   // Auto-advance when playing
   useEffect(() => {
     if (isPlaying && words.length > 0) {
-      intervalRef.current = setInterval(() => {
-        nextWord();
-      }, getInterval());
-    } else {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
+      intervalRef.current = setInterval(nextWord, getInterval());
+    } else if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
     }
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [isPlaying, words.length, getInterval, nextWord]);
 
-  // Handle keyboard events
+  // Keyboard controls
   useEffect(() => {
     const handleKeyPress = (e) => {
       if (e.code === 'Space' || e.code === 'ArrowRight') {
         e.preventDefault();
-        if (isPlaying) {
-          setIsPlaying(false);
-        } else {
-          nextWord();
-        }
+        if (isPlaying) setIsPlaying(false);
+        else nextWord();
       } else if (e.code === 'ArrowLeft') {
         e.preventDefault();
         prevWord();
@@ -108,155 +100,123 @@ function RsvpReader({ text, onClose }) {
       } else if (e.code === 'ArrowDown') {
         e.preventDefault();
         setWpm(prev => Math.max(50, prev - 50));
+      } else if (e.code === 'Escape') {
+        onClose();
       }
     };
-
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [isPlaying, nextWord, prevWord]);
+  }, [isPlaying, nextWord, prevWord, onClose]);
 
-  // Show speed change indicator
   const showSpeedIndicator = (change) => {
     setSpeedChangeIndicator(change);
-    setTimeout(() => setSpeedChangeIndicator(null), 1000);
+    setTimeout(() => setSpeedChangeIndicator(null), 800);
   };
 
-  // Handle touch events for swipe
-  const handleTouchStart = (e) => {
-    setTouchStartY(e.touches[0].clientY);
-    setTouchStartX(e.touches[0].clientX);
-  };
+  // Touch: hold to advance continuously, swipe up/down for speed
+  const handleTouchStart = useCallback((e) => {
+    if (e.target.closest('button')) return;
+    const touch = e.touches[0];
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
+    isHoldingRef.current = false;
 
-  const handleTouchEnd = (e) => {
-    if (touchStartY === null || touchStartX === null) return;
-    
-    const touchEndY = e.changedTouches[0].clientY;
-    const touchEndX = e.changedTouches[0].clientX;
-    const diffY = touchStartY - touchEndY;
-    const diffX = touchStartX - touchEndX;
-    
-    // Determine if horizontal or vertical swipe
-    if (Math.abs(diffX) > Math.abs(diffY)) {
-      // Horizontal swipe - toggle play/pause or navigate
-      if (Math.abs(diffX) > 50) {
-        if (diffX > 0) {
-          // Swipe left - next word
-          if (isPlaying) {
-            setIsPlaying(false);
-          } else {
-            nextWord();
-          }
-        } else {
-          // Swipe right - previous word or toggle play
-          if (isPlaying) {
-            setIsPlaying(false);
-          } else {
-            prevWord();
-          }
-        }
-      }
-    } else {
-      // Vertical swipe - speed control
-      if (Math.abs(diffY) > 50) {
-        if (diffY > 0) {
-          // Swipe up - increase speed
-          setWpm(prev => {
-            const newWpm = Math.min(1000, prev + 50);
-            if (newWpm !== prev) showSpeedIndicator('up');
-            return newWpm;
-          });
-        } else {
-          // Swipe down - decrease speed
-          setWpm(prev => {
-            const newWpm = Math.max(50, prev - 50);
-            if (newWpm !== prev) showSpeedIndicator('down');
-            return newWpm;
-          });
-        }
-      }
+    holdTimerRef.current = setTimeout(() => {
+      isHoldingRef.current = true;
+      setIsPlaying(false);
+      holdIntervalRef.current = setInterval(nextWord, getInterval());
+    }, 200);
+  }, [nextWord, getInterval]);
+
+  const handleTouchMove = useCallback((e) => {
+    if (!touchStartRef.current) return;
+    const touch = e.touches[0];
+    const diffY = Math.abs(touch.clientY - touchStartRef.current.y);
+    const diffX = Math.abs(touch.clientX - touchStartRef.current.x);
+    // If moved enough, cancel the hold — it's a swipe
+    if (diffY > 30 || diffX > 30) {
+      if (holdTimerRef.current) { clearTimeout(holdTimerRef.current); holdTimerRef.current = null; }
+      if (holdIntervalRef.current) { clearInterval(holdIntervalRef.current); holdIntervalRef.current = null; }
+      isHoldingRef.current = false;
     }
-    
-    setTouchStartY(null);
-    setTouchStartX(null);
-  };
+  }, []);
 
-  // Handle mouse wheel for speed control (desktop swipe equivalent)
+  const handleTouchEnd = useCallback((e) => {
+    if (holdTimerRef.current) { clearTimeout(holdTimerRef.current); holdTimerRef.current = null; }
+    if (holdIntervalRef.current) { clearInterval(holdIntervalRef.current); holdIntervalRef.current = null; }
+
+    if (!touchStartRef.current) return;
+    const touch = e.changedTouches[0];
+    const diffY = touchStartRef.current.y - touch.clientY;
+    const diffX = touchStartRef.current.x - touch.clientX;
+    const elapsed = Date.now() - touchStartRef.current.time;
+
+    if (isHoldingRef.current) {
+      // Was holding — just stop, don't do anything else
+      isHoldingRef.current = false;
+      touchStartRef.current = null;
+      return;
+    }
+
+    // Vertical swipe for speed
+    if (Math.abs(diffY) > 50 && Math.abs(diffY) > Math.abs(diffX)) {
+      if (diffY > 0) {
+        setWpm(prev => { const n = Math.min(1000, prev + 50); if (n !== prev) showSpeedIndicator('up'); return n; });
+      } else {
+        setWpm(prev => { const n = Math.max(50, prev - 50); if (n !== prev) showSpeedIndicator('down'); return n; });
+      }
+    } else if (elapsed < 300 && Math.abs(diffX) < 30 && Math.abs(diffY) < 30) {
+      // Quick tap — advance one word (or pause if playing)
+      if (isPlaying) setIsPlaying(false);
+      else nextWord();
+    }
+
+    touchStartRef.current = null;
+  }, [isPlaying, nextWord]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+      if (holdIntervalRef.current) clearInterval(holdIntervalRef.current);
+    };
+  }, []);
+
   const handleWheel = (e) => {
     e.preventDefault();
     if (e.deltaY < 0) {
-      // Scroll up - increase speed
-      setWpm(prev => {
-        const newWpm = Math.min(1000, prev + 50);
-        if (newWpm !== prev) showSpeedIndicator('up');
-        return newWpm;
-      });
+      setWpm(prev => { const n = Math.min(1000, prev + 50); if (n !== prev) showSpeedIndicator('up'); return n; });
     } else {
-      // Scroll down - decrease speed
-      setWpm(prev => {
-        const newWpm = Math.max(50, prev - 50);
-        if (newWpm !== prev) showSpeedIndicator('down');
-        return newWpm;
-      });
+      setWpm(prev => { const n = Math.max(50, prev - 50); if (n !== prev) showSpeedIndicator('down'); return n; });
     }
   };
 
-  // Handle click/tap to advance
   const handleContainerClick = (e) => {
-    // Don't trigger if clicking on buttons
+    if (isMobile) return; // handled by touch events
     if (e.target.closest('button')) return;
-    
-    if (isMobileLandscape) {
-      // In mobile landscape, check for double-tap to exit
-      const currentTime = new Date().getTime();
-      const tapLength = currentTime - lastTapTime;
-      
-      if (tapLength < 500 && tapLength > 0) {
-        // Double-tap detected - exit
-        onClose();
-        return;
-      }
-      
-      setLastTapTime(currentTime);
-      
-      // Single tap toggles play/pause
-      setIsPlaying(prev => !prev);
-    } else {
-      // In normal mode, tap advances or pauses
-      if (isPlaying) {
-        setIsPlaying(false);
-      } else {
-        nextWord();
-      }
-    }
+    if (isPlaying) setIsPlaying(false);
+    else nextWord();
   };
 
-  // Get word with red anchor letter
-  // Uses Optimal Recognition Point (ORP) for better reading focus
-  // The anchor letter stays fixed at the center line
   const renderWordWithAnchor = (word) => {
     if (!word) return null;
-    
-    // Calculate ORP based on word length (standard RSVP positioning)
-    let anchorIndex;
     const len = word.length;
+    let anchorIndex;
     if (len <= 1) anchorIndex = 0;
     else if (len <= 5) anchorIndex = 1;
     else if (len <= 9) anchorIndex = 2;
     else if (len <= 13) anchorIndex = 3;
     else anchorIndex = 4;
-    
-    // Ensure anchorIndex is within bounds
     anchorIndex = Math.min(anchorIndex, len - 1);
-    
-    const beforeAnchor = word.slice(0, anchorIndex);
-    const anchorChar = word[anchorIndex];
-    const afterAnchor = word.slice(anchorIndex + 1);
-    
+
+    const before = word.slice(0, anchorIndex);
+    const anchor = word[anchorIndex];
+    const after = word.slice(anchorIndex + 1);
+
     return (
       <div className="word-container">
-        <span className="word-before">{beforeAnchor}</span>
-        <span className="word-anchor">{anchorChar}</span>
-        <span className="word-after">{afterAnchor}</span>
+        <span className="word-before">{before}</span>
+        <span className="word-anchor">{anchor}</span>
+        <span className="word-after">{after}</span>
       </div>
     );
   };
@@ -269,15 +229,16 @@ function RsvpReader({ text, onClose }) {
   const progress = ((currentIndex + 1) / words.length) * 100;
 
   return (
-    <div 
-      className={`rsvp-reader ${isMobileLandscape ? 'mobile-landscape' : ''}`}
+    <div
+      className={`rsvp-reader ${isMobile ? 'mobile-fullscreen' : ''}`}
       ref={containerRef}
       onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       onWheel={handleWheel}
       onClick={handleContainerClick}
     >
-      {!isMobileLandscape && (
+      {!isMobile && (
         <>
           <div className="rsvp-header">
             <button className="close-button" onClick={onClose}>×</button>
@@ -286,64 +247,49 @@ function RsvpReader({ text, onClose }) {
               <span>{wpm} WPM</span>
             </div>
           </div>
-          
           <div className="progress-bar">
             <div className="progress-fill" style={{ width: `${progress}%` }} />
           </div>
         </>
       )}
-      
+
       <div className="word-display">
         <div className="anchor-line" />
         {renderWordWithAnchor(currentWord)}
         {speedChangeIndicator && (
           <div className={`speed-indicator ${speedChangeIndicator}`}>
-            {speedChangeIndicator === 'up' ? '↑ Faster' : 
-             speedChangeIndicator === 'down' ? '↓ Slower' : 
-             speedChangeIndicator}
-          </div>
-        )}
-        {isMobileLandscape && (
-          <div className="mobile-hint">
-            <span className="wpm-display">{wpm} WPM</span>
-            {isPlaying && <span className="playing-indicator">▶</span>}
-            <span className="exit-hint">Double-tap to exit</span>
+            {speedChangeIndicator === 'up' ? '↑ Faster' : '↓ Slower'}
           </div>
         )}
       </div>
-      
-      {!isMobileLandscape && (
+
+      {isMobile && (
+        <div className="mobile-overlay-info">
+          <div className="mobile-progress-bar">
+            <div className="mobile-progress-fill" style={{ width: `${progress}%` }} />
+          </div>
+          <span className="mobile-wpm">{wpm} WPM</span>
+          <button className="mobile-close" onClick={onClose}>×</button>
+        </div>
+      )}
+
+      {!isMobile && (
         <>
           <div className="rsvp-controls">
-            <button onClick={prevWord} disabled={currentIndex === 0}>
-              ← Prev
-            </button>
-            <button onClick={togglePlayPause} className="play-pause">
+            <button onClick={prevWord} disabled={currentIndex === 0}>← Prev</button>
+            <button onClick={() => setIsPlaying(p => !p)} className="play-pause">
               {isPlaying ? '⏸ Pause' : '▶ Play'}
             </button>
-            <button onClick={nextWord} disabled={currentIndex >= words.length - 1}>
-              Next →
-            </button>
+            <button onClick={nextWord} disabled={currentIndex >= words.length - 1}>Next →</button>
           </div>
-          
           <div className="speed-control">
             <label>Speed: {wpm} WPM</label>
             <input
-              type="range"
-              min="50"
-              max="1000"
-              step="50"
+              type="range" min="50" max="1000" step="50"
               value={wpm}
               onChange={(e) => setWpm(Number(e.target.value))}
               className="speed-slider"
             />
-            <div className="speed-hint">
-              Swipe up/down or use ↑↓ keys to adjust speed
-            </div>
-          </div>
-          
-          <div className="instructions">
-            <p>Tap/click or press Space to advance • Swipe up/down for speed</p>
           </div>
         </>
       )}

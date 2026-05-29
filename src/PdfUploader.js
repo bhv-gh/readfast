@@ -34,8 +34,9 @@ function PdfUploader({ onTextExtracted, onPdfSaved }) {
       }
       
       const trimmedText = fullText.trim();
-      
+
       // Save to library
+      let savedPdf;
       try {
         const pdfData = {
           name: file.name,
@@ -43,16 +44,15 @@ function PdfUploader({ onTextExtracted, onPdfSaved }) {
           text: trimmedText,
           uploadDate: new Date().toISOString()
         };
-        const savedPdf = PdfLibrary.save(pdfData);
+        savedPdf = PdfLibrary.save(pdfData);
         if (onPdfSaved) {
           onPdfSaved(savedPdf);
         }
       } catch (saveError) {
         console.warn('Failed to save PDF to library:', saveError);
-        // Continue even if save fails - still allow reading
       }
-      
-      onTextExtracted(trimmedText);
+
+      onTextExtracted(trimmedText, savedPdf?.id);
     } catch (err) {
       setError('Failed to extract text from PDF: ' + err.message);
       console.error(err);
