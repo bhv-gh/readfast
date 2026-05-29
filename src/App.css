@@ -12,6 +12,8 @@
   font-size: calc(10px + 2vmin);
   color: white;
   padding: 20px;
+  box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 .App-header h1 {
