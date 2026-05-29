@@ -55,6 +55,16 @@ function PdfLibraryView({ onSelectPdf, onUploadNew }) {
           <span>•</span>
           <span>{stats.totalWords.toLocaleString()} words</span>
         </div>
+        <button className="update-app-btn" onClick={() => {
+          if ('caches' in window) {
+            caches.keys().then(names => Promise.all(names.map(n => caches.delete(n))))
+              .then(() => window.location.reload());
+          } else {
+            window.location.reload();
+          }
+        }}>
+          Update App
+        </button>
       </div>
 
       <div className="library-actions">
