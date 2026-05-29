@@ -284,33 +284,40 @@ function RsvpReader({ text, pdfId, chapters = [], onClose }) {
 
   const renderContextView = () => {
     const RADIUS = isMobile ? 6 : 10;
-    const start = Math.max(0, currentIndex - RADIUS);
-    const end = Math.min(words.length - 1, currentIndex + RADIUS);
+    const w = words[currentIndex];
+    const ai = getAnchorIndex(w);
+
+    const beforeWords = [];
+    for (let i = Math.max(0, currentIndex - RADIUS); i < currentIndex; i++) {
+      const dist = currentIndex - i;
+      beforeWords.push(
+        <span key={i} className="context-word" style={{ opacity: Math.max(0.04, 0.35 - dist * 0.04) }}>
+          {words[i]}
+        </span>
+      );
+    }
+
+    const afterWords = [];
+    for (let i = currentIndex + 1; i <= Math.min(words.length - 1, currentIndex + RADIUS); i++) {
+      const dist = i - currentIndex;
+      afterWords.push(
+        <span key={i} className="context-word" style={{ opacity: Math.max(0.04, 0.35 - dist * 0.04) }}>
+          {words[i]}
+        </span>
+      );
+    }
 
     return (
       <div className="context-container">
-        {Array.from({ length: end - start + 1 }, (_, i) => {
-          const idx = start + i;
-          const dist = Math.abs(idx - currentIndex);
-          const opacity = idx === currentIndex ? 1 : Math.max(0.06, 1 - dist * 0.13);
-
-          if (idx === currentIndex) {
-            const w = words[idx];
-            const ai = getAnchorIndex(w);
-            return (
-              <span key={idx} className="context-current">
-                {w.slice(0, ai)}
-                <span className="word-anchor">{w[ai]}</span>
-                {w.slice(ai + 1)}
-              </span>
-            );
-          }
-          return (
-            <span key={idx} className="context-word" style={{ opacity }}>
-              {words[idx]}
-            </span>
-          );
-        })}
+        <span className="context-before">
+          {beforeWords}
+          <span className="context-current-before">{w.slice(0, ai)}</span>
+        </span>
+        <span className="context-anchor">{w[ai]}</span>
+        <span className="context-after">
+          <span className="context-current-after">{w.slice(ai + 1)}</span>
+          {afterWords}
+        </span>
       </div>
     );
   };
@@ -360,7 +367,7 @@ function RsvpReader({ text, pdfId, chapters = [], onClose }) {
       )}
 
       <div className={`word-display ${contextMode ? 'context-mode' : ''}`}>
-        {!contextMode && <div className="anchor-line" />}
+        <div className="anchor-line" />
         {contextMode ? renderContextView() : renderWordWithAnchor(currentWord)}
         {speedChangeIndicator && (
           <div className={`speed-indicator ${speedChangeIndicator}`}>
