@@ -64,22 +64,28 @@ function PdfUploader({ onTextExtracted, onPdfSaved }) {
       try {
         const outline = await pdf.getOutline();
         if (outline && outline.length > 0) {
-          for (const item of outline) {
-            try {
-              let dest = item.dest;
-              if (typeof dest === 'string') {
-                dest = await pdf.getDestination(dest);
+          const extractOutline = async (items, level) => {
+            for (const item of items) {
+              try {
+                let dest = item.dest;
+                if (typeof dest === 'string') {
+                  dest = await pdf.getDestination(dest);
+                }
+                if (dest) {
+                  const ref = dest[0];
+                  const pageIndex = await pdf.getPageIndex(ref);
+                  const wordIndex = pageWordCounts[pageIndex] || 0;
+                  chapters.push({ title: item.title, wordIndex, level });
+                }
+              } catch {
+                // skip unresolvable outline entries
               }
-              if (dest) {
-                const ref = dest[0];
-                const pageIndex = await pdf.getPageIndex(ref);
-                const wordIndex = pageWordCounts[pageIndex] || 0;
-                chapters.push({ title: item.title, wordIndex });
+              if (item.items && item.items.length > 0) {
+                await extractOutline(item.items, level + 1);
               }
-            } catch {
-              // skip unresolvable outline entries
             }
-          }
+          };
+          await extractOutline(outline, 0);
         }
       } catch {
         // outline not available

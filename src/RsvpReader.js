@@ -324,7 +324,7 @@ function RsvpReader({ text, pdfId, chapters = [], onClose }) {
             {chapters.map((ch, i) => (
               <button
                 key={i}
-                className={`chapter-item ${currentChapter === ch ? 'active' : ''}`}
+                className={`chapter-item ${currentChapter === ch ? 'active' : ''} chapter-level-${ch.level || 0}`}
                 onClick={() => jumpToChapter(ch.wordIndex)}
               >
                 {ch.title}
