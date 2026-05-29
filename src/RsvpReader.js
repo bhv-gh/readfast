@@ -165,9 +165,14 @@ function RsvpReader({ text, pdfId, onClose }) {
         setWpm(prev => { const n = Math.max(50, prev - 50); if (n !== prev) showSpeedIndicator('down'); return n; });
       }
     } else if (elapsed < 300 && Math.abs(diffX) < 30 && Math.abs(diffY) < 30) {
-      // Quick tap — advance one word (or pause if playing)
-      if (isPlaying) setIsPlaying(false);
-      else nextWord();
+      // Quick tap — left half goes back, right half goes forward
+      if (isPlaying) {
+        setIsPlaying(false);
+      } else {
+        const tapX = touch.clientX;
+        if (tapX < window.innerWidth / 2) prevWord();
+        else nextWord();
+      }
     }
 
     touchStartRef.current = null;
@@ -191,10 +196,14 @@ function RsvpReader({ text, pdfId, onClose }) {
   };
 
   const handleContainerClick = (e) => {
-    if (isMobile) return; // handled by touch events
+    if (isMobile) return;
     if (e.target.closest('button')) return;
-    if (isPlaying) setIsPlaying(false);
-    else nextWord();
+    if (isPlaying) {
+      setIsPlaying(false);
+    } else {
+      if (e.clientX < window.innerWidth / 2) prevWord();
+      else nextWord();
+    }
   };
 
   const renderWordWithAnchor = (word) => {
