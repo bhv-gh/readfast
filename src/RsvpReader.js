@@ -115,10 +115,10 @@ function RsvpReader({ text, pdfId, chapters = [], onClose }) {
         prevWord();
       } else if (e.code === 'ArrowUp') {
         e.preventDefault();
-        setWpm(prev => Math.min(1000, prev + 50));
+        setWpm(prev => Math.min(1000, prev + 10));
       } else if (e.code === 'ArrowDown') {
         e.preventDefault();
-        setWpm(prev => Math.max(50, prev - 50));
+        setWpm(prev => Math.max(50, prev - 10));
       } else if (e.code === 'Escape') {
         onClose();
       } else if (e.code === 'KeyC' && chapters.length > 0) {
@@ -177,9 +177,9 @@ function RsvpReader({ text, pdfId, chapters = [], onClose }) {
 
     if (Math.abs(diffY) > 50 && Math.abs(diffY) > Math.abs(diffX)) {
       if (diffY > 0) {
-        setWpm(prev => { const n = Math.min(1000, prev + 50); if (n !== prev) showSpeedIndicator('up'); return n; });
+        setWpm(prev => { const n = Math.min(1000, prev + 10); if (n !== prev) showSpeedIndicator('up'); return n; });
       } else {
-        setWpm(prev => { const n = Math.max(50, prev - 50); if (n !== prev) showSpeedIndicator('down'); return n; });
+        setWpm(prev => { const n = Math.max(50, prev - 10); if (n !== prev) showSpeedIndicator('down'); return n; });
       }
     } else if (elapsed < 300 && Math.abs(diffX) < 30 && Math.abs(diffY) < 30) {
       if (isPlaying) {
@@ -204,9 +204,9 @@ function RsvpReader({ text, pdfId, chapters = [], onClose }) {
   const handleWheel = (e) => {
     e.preventDefault();
     if (e.deltaY < 0) {
-      setWpm(prev => { const n = Math.min(1000, prev + 50); if (n !== prev) showSpeedIndicator('up'); return n; });
+      setWpm(prev => { const n = Math.min(1000, prev + 10); if (n !== prev) showSpeedIndicator('up'); return n; });
     } else {
-      setWpm(prev => { const n = Math.max(50, prev - 50); if (n !== prev) showSpeedIndicator('down'); return n; });
+      setWpm(prev => { const n = Math.max(50, prev - 10); if (n !== prev) showSpeedIndicator('down'); return n; });
     }
   };
 
@@ -346,7 +346,7 @@ function RsvpReader({ text, pdfId, chapters = [], onClose }) {
           <div className="speed-control">
             <label>Speed: {wpm} WPM</label>
             <input
-              type="range" min="50" max="1000" step="50"
+              type="range" min="50" max="1000" step="10"
               value={wpm}
               onChange={(e) => setWpm(Number(e.target.value))}
               className="speed-slider"
