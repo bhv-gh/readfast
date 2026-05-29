@@ -33,8 +33,8 @@ function RsvpReader({ text, pdfId, chapters = [], onClose }) {
   const intervalRef = useRef(null);
   const holdIntervalRef = useRef(null);
   const touchStartRef = useRef(null);
-  const isHoldingRef = useRef(false);
   const holdTimerRef = useRef(null);
+  const lastTapRef = useRef(0);
 
   const currentChapter = useMemo(() => {
     if (!chapters.length) return null;
@@ -89,6 +89,13 @@ function RsvpReader({ text, pdfId, chapters = [], onClose }) {
     setShowChapters(false);
   }, []);
 
+  // Centralized cleanup for hold state
+  const clearHold = useCallback(() => {
+    if (holdTimerRef.current) { clearTimeout(holdTimerRef.current); holdTimerRef.current = null; }
+    if (holdIntervalRef.current) { clearInterval(holdIntervalRef.current); holdIntervalRef.current = null; }
+  }, []);
+
+  // Auto-advance when playing
   useEffect(() => {
     if (isPlaying && words.length > 0) {
       intervalRef.current = setInterval(nextWord, getInterval());
@@ -99,6 +106,7 @@ function RsvpReader({ text, pdfId, chapters = [], onClose }) {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [isPlaying, words.length, getInterval, nextWord]);
 
+  // Keyboard controls
   useEffect(() => {
     const handleKeyPress = (e) => {
       if (showChapters && e.code === 'Escape') {
@@ -134,17 +142,21 @@ function RsvpReader({ text, pdfId, chapters = [], onClose }) {
     setTimeout(() => setSpeedChangeIndicator(null), 800);
   };
 
+  // --- Mobile touch handling ---
+  // Tap right half: next word | Tap left half: prev word
+  // Double-tap: toggle play/pause
+  // Hold (400ms+): advance continuously while finger is down
+  // Swipe up/down: change speed (works while playing without stopping)
+
   const handleTouchStart = useCallback((e) => {
     if (e.target.closest('button') || e.target.closest('.chapter-panel')) return;
     const touch = e.touches[0];
-    touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
-    isHoldingRef.current = false;
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now(), moved: false };
 
     holdTimerRef.current = setTimeout(() => {
-      isHoldingRef.current = true;
-      setIsPlaying(false);
+      if (!touchStartRef.current || touchStartRef.current.moved) return;
       holdIntervalRef.current = setInterval(nextWord, getInterval());
-    }, 200);
+    }, 400);
   }, [nextWord, getInterval]);
 
   const handleTouchMove = useCallback((e) => {
@@ -152,54 +164,70 @@ function RsvpReader({ text, pdfId, chapters = [], onClose }) {
     const touch = e.touches[0];
     const diffY = Math.abs(touch.clientY - touchStartRef.current.y);
     const diffX = Math.abs(touch.clientX - touchStartRef.current.x);
-    if (diffY > 30 || diffX > 30) {
-      if (holdTimerRef.current) { clearTimeout(holdTimerRef.current); holdTimerRef.current = null; }
-      if (holdIntervalRef.current) { clearInterval(holdIntervalRef.current); holdIntervalRef.current = null; }
-      isHoldingRef.current = false;
+    if (diffY > 20 || diffX > 20) {
+      touchStartRef.current.moved = true;
+      clearHold();
     }
-  }, []);
+  }, [clearHold]);
 
   const handleTouchEnd = useCallback((e) => {
-    if (holdTimerRef.current) { clearTimeout(holdTimerRef.current); holdTimerRef.current = null; }
-    if (holdIntervalRef.current) { clearInterval(holdIntervalRef.current); holdIntervalRef.current = null; }
-
+    clearHold();
     if (!touchStartRef.current) return;
+
     const touch = e.changedTouches[0];
-    const diffY = touchStartRef.current.y - touch.clientY;
-    const diffX = touchStartRef.current.x - touch.clientX;
-    const elapsed = Date.now() - touchStartRef.current.time;
+    const { x: startX, y: startY, time: startTime, moved } = touchStartRef.current;
+    const elapsed = Date.now() - startTime;
+    const diffY = startY - touch.clientY;
+    const diffX = startX - touch.clientX;
+    touchStartRef.current = null;
 
-    if (isHoldingRef.current) {
-      isHoldingRef.current = false;
-      touchStartRef.current = null;
-      return;
-    }
+    // Was holding (long press) — just stop advancing, nothing else
+    if (!moved && elapsed >= 400) return;
 
-    if (Math.abs(diffY) > 50 && Math.abs(diffY) > Math.abs(diffX)) {
+    // Vertical swipe — change speed (doesn't affect play state)
+    if (moved && Math.abs(diffY) > 40 && Math.abs(diffY) > Math.abs(diffX)) {
       if (diffY > 0) {
         setWpm(prev => { const n = Math.min(1000, prev + 10); if (n !== prev) showSpeedIndicator('up'); return n; });
       } else {
         setWpm(prev => { const n = Math.max(50, prev - 10); if (n !== prev) showSpeedIndicator('down'); return n; });
       }
-    } else if (elapsed < 300 && Math.abs(diffX) < 30 && Math.abs(diffY) < 30) {
-      if (isPlaying) {
-        setIsPlaying(false);
-      } else {
-        const tapX = touch.clientX;
-        if (tapX < window.innerWidth / 2) prevWord();
-        else nextWord();
-      }
+      return;
     }
 
-    touchStartRef.current = null;
-  }, [isPlaying, nextWord, prevWord]);
+    // Ignore if finger moved (incomplete swipe)
+    if (moved) return;
 
+    // Quick tap — check for double-tap first
+    const now = Date.now();
+    if (now - lastTapRef.current < 350) {
+      // Double-tap: toggle play/pause
+      lastTapRef.current = 0;
+      setIsPlaying(prev => !prev);
+      return;
+    }
+    lastTapRef.current = now;
+
+    // Single tap (after a short delay to rule out double-tap)
+    // But we act immediately for responsiveness — double-tap will override
+    if (isPlaying) {
+      setIsPlaying(false);
+    } else {
+      const tapX = touch.clientX;
+      if (tapX < window.innerWidth / 2) prevWord();
+      else nextWord();
+    }
+  }, [clearHold, isPlaying, nextWord, prevWord]);
+
+  // touchcancel: iOS fires this instead of touchend on system gestures
+  const handleTouchCancel = useCallback(() => {
+    clearHold();
+    touchStartRef.current = null;
+  }, [clearHold]);
+
+  // Safety: clear hold on unmount
   useEffect(() => {
-    return () => {
-      if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
-      if (holdIntervalRef.current) clearInterval(holdIntervalRef.current);
-    };
-  }, []);
+    return () => clearHold();
+  }, [clearHold]);
 
   const handleWheel = (e) => {
     e.preventDefault();
@@ -260,6 +288,7 @@ function RsvpReader({ text, pdfId, chapters = [], onClose }) {
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchCancel}
       onWheel={handleWheel}
       onClick={handleContainerClick}
     >
@@ -310,6 +339,7 @@ function RsvpReader({ text, pdfId, chapters = [], onClose }) {
             </button>
           )}
           <span className="mobile-wpm">{wpm} WPM</span>
+          {isPlaying && <span className="mobile-playing">▶</span>}
           <button className="mobile-close" onClick={onClose}>×</button>
         </div>
       )}

@@ -316,6 +316,12 @@
   white-space: nowrap;
 }
 
+.mobile-playing {
+  font-size: 10px;
+  color: #4a9eff;
+  margin-right: 8px;
+}
+
 .mobile-close {
   background: none;
   border: none;
