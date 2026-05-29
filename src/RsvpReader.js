@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import './RsvpReader.css';
 
 const POSITION_KEY = 'readfast_positions';
@@ -21,19 +21,30 @@ function getSavedPosition(pdfId) {
   return getPositions()[pdfId] || 0;
 }
 
-function RsvpReader({ text, pdfId, onClose }) {
+function RsvpReader({ text, pdfId, chapters = [], onClose }) {
   const [words, setWords] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [wpm, setWpm] = useState(300);
   const [speedChangeIndicator, setSpeedChangeIndicator] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [showChapters, setShowChapters] = useState(false);
   const containerRef = useRef(null);
   const intervalRef = useRef(null);
   const holdIntervalRef = useRef(null);
   const touchStartRef = useRef(null);
   const isHoldingRef = useRef(false);
   const holdTimerRef = useRef(null);
+
+  const currentChapter = useMemo(() => {
+    if (!chapters.length) return null;
+    let active = null;
+    for (const ch of chapters) {
+      if (ch.wordIndex <= currentIndex) active = ch;
+      else break;
+    }
+    return active;
+  }, [chapters, currentIndex]);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -54,7 +65,6 @@ function RsvpReader({ text, pdfId, onClose }) {
     }
   }, [text, pdfId]);
 
-  // Persist position on changes
   useEffect(() => {
     savePosition(pdfId, currentIndex);
   }, [pdfId, currentIndex]);
@@ -73,7 +83,12 @@ function RsvpReader({ text, pdfId, onClose }) {
     setCurrentIndex(prev => Math.max(0, prev - 1));
   }, []);
 
-  // Auto-advance when playing
+  const jumpToChapter = useCallback((wordIndex) => {
+    setIsPlaying(false);
+    setCurrentIndex(wordIndex);
+    setShowChapters(false);
+  }, []);
+
   useEffect(() => {
     if (isPlaying && words.length > 0) {
       intervalRef.current = setInterval(nextWord, getInterval());
@@ -84,9 +99,13 @@ function RsvpReader({ text, pdfId, onClose }) {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [isPlaying, words.length, getInterval, nextWord]);
 
-  // Keyboard controls
   useEffect(() => {
     const handleKeyPress = (e) => {
+      if (showChapters && e.code === 'Escape') {
+        e.preventDefault();
+        setShowChapters(false);
+        return;
+      }
       if (e.code === 'Space' || e.code === 'ArrowRight') {
         e.preventDefault();
         if (isPlaying) setIsPlaying(false);
@@ -102,20 +121,21 @@ function RsvpReader({ text, pdfId, onClose }) {
         setWpm(prev => Math.max(50, prev - 50));
       } else if (e.code === 'Escape') {
         onClose();
+      } else if (e.code === 'KeyC' && chapters.length > 0) {
+        setShowChapters(prev => !prev);
       }
     };
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [isPlaying, nextWord, prevWord, onClose]);
+  }, [isPlaying, nextWord, prevWord, onClose, showChapters, chapters.length]);
 
   const showSpeedIndicator = (change) => {
     setSpeedChangeIndicator(change);
     setTimeout(() => setSpeedChangeIndicator(null), 800);
   };
 
-  // Touch: hold to advance continuously, swipe up/down for speed
   const handleTouchStart = useCallback((e) => {
-    if (e.target.closest('button')) return;
+    if (e.target.closest('button') || e.target.closest('.chapter-panel')) return;
     const touch = e.touches[0];
     touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
     isHoldingRef.current = false;
@@ -132,7 +152,6 @@ function RsvpReader({ text, pdfId, onClose }) {
     const touch = e.touches[0];
     const diffY = Math.abs(touch.clientY - touchStartRef.current.y);
     const diffX = Math.abs(touch.clientX - touchStartRef.current.x);
-    // If moved enough, cancel the hold — it's a swipe
     if (diffY > 30 || diffX > 30) {
       if (holdTimerRef.current) { clearTimeout(holdTimerRef.current); holdTimerRef.current = null; }
       if (holdIntervalRef.current) { clearInterval(holdIntervalRef.current); holdIntervalRef.current = null; }
@@ -151,13 +170,11 @@ function RsvpReader({ text, pdfId, onClose }) {
     const elapsed = Date.now() - touchStartRef.current.time;
 
     if (isHoldingRef.current) {
-      // Was holding — just stop, don't do anything else
       isHoldingRef.current = false;
       touchStartRef.current = null;
       return;
     }
 
-    // Vertical swipe for speed
     if (Math.abs(diffY) > 50 && Math.abs(diffY) > Math.abs(diffX)) {
       if (diffY > 0) {
         setWpm(prev => { const n = Math.min(1000, prev + 50); if (n !== prev) showSpeedIndicator('up'); return n; });
@@ -165,7 +182,6 @@ function RsvpReader({ text, pdfId, onClose }) {
         setWpm(prev => { const n = Math.max(50, prev - 50); if (n !== prev) showSpeedIndicator('down'); return n; });
       }
     } else if (elapsed < 300 && Math.abs(diffX) < 30 && Math.abs(diffY) < 30) {
-      // Quick tap — left half goes back, right half goes forward
       if (isPlaying) {
         setIsPlaying(false);
       } else {
@@ -176,9 +192,8 @@ function RsvpReader({ text, pdfId, onClose }) {
     }
 
     touchStartRef.current = null;
-  }, [isPlaying, nextWord]);
+  }, [isPlaying, nextWord, prevWord]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
@@ -197,7 +212,8 @@ function RsvpReader({ text, pdfId, onClose }) {
 
   const handleContainerClick = (e) => {
     if (isMobile) return;
-    if (e.target.closest('button')) return;
+    if (e.target.closest('button') || e.target.closest('.chapter-panel')) return;
+    if (showChapters) { setShowChapters(false); return; }
     if (isPlaying) {
       setIsPlaying(false);
     } else {
@@ -251,6 +267,14 @@ function RsvpReader({ text, pdfId, onClose }) {
         <>
           <div className="rsvp-header">
             <button className="close-button" onClick={onClose}>×</button>
+            {chapters.length > 0 && (
+              <button
+                className="chapter-toggle-btn"
+                onClick={() => setShowChapters(prev => !prev)}
+              >
+                {currentChapter ? currentChapter.title : 'Chapters'}
+              </button>
+            )}
             <div className="progress-info">
               <span>{currentIndex + 1} / {words.length}</span>
               <span>{wpm} WPM</span>
@@ -277,8 +301,36 @@ function RsvpReader({ text, pdfId, onClose }) {
           <div className="mobile-progress-bar">
             <div className="mobile-progress-fill" style={{ width: `${progress}%` }} />
           </div>
+          {chapters.length > 0 && (
+            <button
+              className="mobile-chapter-btn"
+              onClick={() => setShowChapters(prev => !prev)}
+            >
+              Ch
+            </button>
+          )}
           <span className="mobile-wpm">{wpm} WPM</span>
           <button className="mobile-close" onClick={onClose}>×</button>
+        </div>
+      )}
+
+      {showChapters && chapters.length > 0 && (
+        <div className="chapter-panel">
+          <div className="chapter-panel-header">
+            <h3>Chapters</h3>
+            <button onClick={() => setShowChapters(false)}>×</button>
+          </div>
+          <div className="chapter-list">
+            {chapters.map((ch, i) => (
+              <button
+                key={i}
+                className={`chapter-item ${currentChapter === ch ? 'active' : ''}`}
+                onClick={() => jumpToChapter(ch.wordIndex)}
+              >
+                {ch.title}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

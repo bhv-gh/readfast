@@ -28,6 +28,7 @@ class PdfLibrary {
         size: pdfData.size,
         uploadDate: pdfData.uploadDate || new Date().toISOString(),
         text: pdfData.text,
+        chapters: pdfData.chapters || [],
         wordCount: pdfData.text ? pdfData.text.split(/\s+/).length : 0,
         preview: pdfData.text ? pdfData.text.substring(0, 200) + '...' : ''
       };

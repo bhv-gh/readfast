@@ -8,6 +8,7 @@ import PdfLibrary from './PdfLibrary';
 function App() {
   const [extractedText, setExtractedText] = useState(null);
   const [currentPdfId, setCurrentPdfId] = useState(null);
+  const [currentChapters, setCurrentChapters] = useState([]);
   const [showReader, setShowReader] = useState(false);
   const [showLibrary, setShowLibrary] = useState(true);
   const [showUploader, setShowUploader] = useState(false);
@@ -24,6 +25,8 @@ function App() {
   const handleTextExtracted = (text, pdfId) => {
     setExtractedText(text);
     setCurrentPdfId(pdfId || null);
+    const saved = pdfId ? PdfLibrary.getById(pdfId) : null;
+    setCurrentChapters(saved?.chapters || []);
     setShowReader(true);
     setShowLibrary(false);
     setShowUploader(false);
@@ -32,6 +35,7 @@ function App() {
   const handlePdfFromLibrary = (pdf) => {
     setExtractedText(pdf.text);
     setCurrentPdfId(pdf.id);
+    setCurrentChapters(pdf.chapters || []);
     setShowReader(true);
     setShowLibrary(false);
     setShowUploader(false);
@@ -41,6 +45,7 @@ function App() {
     setShowReader(false);
     setExtractedText(null);
     setCurrentPdfId(null);
+    setCurrentChapters([]);
     // Return to library if it has items, otherwise show uploader
     const library = PdfLibrary.getAll();
     if (library.length > 0) {
@@ -79,7 +84,7 @@ function App() {
         )}
         
         {showReader ? (
-          <RsvpReader text={extractedText} pdfId={currentPdfId} onClose={handleCloseReader} />
+          <RsvpReader text={extractedText} pdfId={currentPdfId} chapters={currentChapters} onClose={handleCloseReader} />
         ) : showLibrary ? (
           <PdfLibraryView 
             onSelectPdf={handlePdfFromLibrary}
