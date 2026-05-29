@@ -29,6 +29,9 @@ function RsvpReader({ text, pdfId, chapters = [], onClose }) {
   const [speedChangeIndicator, setSpeedChangeIndicator] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
   const [showChapters, setShowChapters] = useState(false);
+  const [contextMode, setContextMode] = useState(() => {
+    try { return localStorage.getItem('readfast_contextMode') === 'true'; } catch { return false; }
+  });
   const containerRef = useRef(null);
   const intervalRef = useRef(null);
   const holdIntervalRef = useRef(null);
@@ -81,6 +84,14 @@ function RsvpReader({ text, pdfId, chapters = [], onClose }) {
 
   const prevWord = useCallback(() => {
     setCurrentIndex(prev => Math.max(0, prev - 1));
+  }, []);
+
+  const toggleContextMode = useCallback(() => {
+    setContextMode(prev => {
+      const next = !prev;
+      try { localStorage.setItem('readfast_contextMode', String(next)); } catch {}
+      return next;
+    });
   }, []);
 
   const jumpToChapter = useCallback((wordIndex) => {
@@ -250,26 +261,56 @@ function RsvpReader({ text, pdfId, chapters = [], onClose }) {
     }
   };
 
+  const getAnchorIndex = (word) => {
+    const len = word.length;
+    if (len <= 1) return 0;
+    if (len <= 5) return 1;
+    if (len <= 9) return 2;
+    if (len <= 13) return 3;
+    return Math.min(4, len - 1);
+  };
+
   const renderWordWithAnchor = (word) => {
     if (!word) return null;
-    const len = word.length;
-    let anchorIndex;
-    if (len <= 1) anchorIndex = 0;
-    else if (len <= 5) anchorIndex = 1;
-    else if (len <= 9) anchorIndex = 2;
-    else if (len <= 13) anchorIndex = 3;
-    else anchorIndex = 4;
-    anchorIndex = Math.min(anchorIndex, len - 1);
-
-    const before = word.slice(0, anchorIndex);
-    const anchor = word[anchorIndex];
-    const after = word.slice(anchorIndex + 1);
-
+    const ai = getAnchorIndex(word);
     return (
       <div className="word-container">
-        <span className="word-before">{before}</span>
-        <span className="word-anchor">{anchor}</span>
-        <span className="word-after">{after}</span>
+        <span className="word-before">{word.slice(0, ai)}</span>
+        <span className="word-anchor">{word[ai]}</span>
+        <span className="word-after">{word.slice(ai + 1)}</span>
+      </div>
+    );
+  };
+
+  const renderContextView = () => {
+    const RADIUS = isMobile ? 6 : 10;
+    const start = Math.max(0, currentIndex - RADIUS);
+    const end = Math.min(words.length - 1, currentIndex + RADIUS);
+
+    return (
+      <div className="context-container">
+        {Array.from({ length: end - start + 1 }, (_, i) => {
+          const idx = start + i;
+          const dist = Math.abs(idx - currentIndex);
+          const opacity = idx === currentIndex ? 1 : Math.max(0.06, 1 - dist * 0.13);
+
+          if (idx === currentIndex) {
+            const w = words[idx];
+            const ai = getAnchorIndex(w);
+            return (
+              <span key={idx} className="context-current">
+                {w.slice(0, ai)}
+                <span className="word-anchor">{w[ai]}</span>
+                {w.slice(ai + 1)}
+              </span>
+            );
+          }
+          return (
+            <span key={idx} className="context-word" style={{ opacity }}>
+              {words[idx]}
+            </span>
+          );
+        })}
       </div>
     );
   };
@@ -304,6 +345,9 @@ function RsvpReader({ text, pdfId, chapters = [], onClose }) {
                 {currentChapter ? currentChapter.title : 'Chapters'}
               </button>
             )}
+            <button className="mode-toggle-btn" onClick={toggleContextMode}>
+              {contextMode ? 'Focus' : 'Context'}
+            </button>
             <div className="progress-info">
               <span>{currentIndex + 1} / {words.length}</span>
               <span>{wpm} WPM</span>
@@ -315,9 +359,9 @@ function RsvpReader({ text, pdfId, chapters = [], onClose }) {
         </>
       )}
 
-      <div className="word-display">
-        <div className="anchor-line" />
-        {renderWordWithAnchor(currentWord)}
+      <div className={`word-display ${contextMode ? 'context-mode' : ''}`}>
+        {!contextMode && <div className="anchor-line" />}
+        {contextMode ? renderContextView() : renderWordWithAnchor(currentWord)}
         {speedChangeIndicator && (
           <div className={`speed-indicator ${speedChangeIndicator}`}>
             {speedChangeIndicator === 'up' ? '↑ Faster' : '↓ Slower'}
@@ -338,6 +382,9 @@ function RsvpReader({ text, pdfId, chapters = [], onClose }) {
               Ch
             </button>
           )}
+          <button className="mobile-mode-btn" onClick={toggleContextMode}>
+            {contextMode ? 'F' : 'C'}
+          </button>
           <span className="mobile-wpm">{wpm} WPM</span>
           {isPlaying && <span className="mobile-playing">▶</span>}
           <button className="mobile-close" onClick={onClose}>×</button>

@@ -444,6 +444,75 @@
 .chapter-level-2 { padding-left: 52px; font-size: 12px; color: #aaa; }
 .chapter-level-3 { padding-left: 68px; font-size: 12px; color: #999; }
 
+/* Context mode */
+.context-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4em;
+  width: 100%;
+  font-size: clamp(20px, 4vw, 36px);
+  font-weight: 400;
+  white-space: nowrap;
+  mask-image: linear-gradient(to right, transparent 0%, white 15%, white 85%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, white 15%, white 85%, transparent 100%);
+}
+
+.context-word {
+  color: #ffffff;
+  transition: opacity 0.15s;
+}
+
+.context-current {
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 1.3em;
+}
+
+.context-current .word-anchor {
+  font-size: inherit;
+}
+
+.word-display.context-mode {
+  padding: 20px;
+}
+
+.rsvp-reader.mobile-fullscreen .context-container {
+  font-size: clamp(16px, 4vw, 28px);
+}
+
+/* Mode toggle buttons */
+.mode-toggle-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid #3a3a3a;
+  color: #cccccc;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.mode-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: #4a9eff;
+}
+
+.mobile-mode-btn {
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 11px;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* Desktop responsive */
 @media (max-width: 768px) {
   .rsvp-controls {
